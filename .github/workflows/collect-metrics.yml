@@ -1,0 +1,38 @@
+name: Collect Copilot metrics (fork only)
+
+# This workflow does not run on GaryJSAdv/copilot-usage-dashboard.
+# A fork opts in by running it manually, then uncommenting the schedule.
+on:
+  workflow_dispatch:
+  # schedule:
+  #   - cron: "15 12 * * *"
+
+permissions:
+  contents: write
+
+jobs:
+  collect:
+    if: github.repository != 'GaryJSAdv/copilot-usage-dashboard'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Download the latest 28-day report
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          ENTERPRISE_SLUG: ${{ secrets.ENTERPRISE_SLUG }}
+          ORG_SLUG: ${{ secrets.ORG_SLUG }}
+          COPILOT_SCOPE: ${{ vars.COPILOT_SCOPE }}
+        run: npm run collect
+      - name: Commit the public snapshot
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/data/series.json
+          git diff --staged --quiet && exit 0
+          git commit -m "chore(data): update Copilot usage series"
+          git push
