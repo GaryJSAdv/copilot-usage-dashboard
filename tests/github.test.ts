@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { dayReportUrl, githubHeaders, latestReportUrl, parseLinkResponse } from '../src/domain/github'
+import { dayReportUrl, describeApiFailure, describeDownloadFailure, githubHeaders, latestReportUrl, parseLinkResponse } from '../src/domain/github'
 import { parseSlug } from '../src/domain/slug'
 
 describe('parseSlug', () => {
@@ -33,13 +33,25 @@ describe('report URLs', () => {
     )
   })
 
-  it('sends the token only to api.github.com', () => {
+  it('sends GitHub headers only to api.github.com', () => {
     const api = githubHeaders('https://api.github.com/enterprises/acme/copilot/metrics/reports/enterprise-28-day/latest', 'secret')
-    expect(api.Authorization).toBe('Bearer secret')
-    expect(api['X-GitHub-Api-Version']).toBe('2026-03-10')
-    expect(api.Accept).toBe('application/vnd.github+json')
+    expect(api).toEqual({
+      Accept: 'application/vnd.github+json',
+      Authorization: 'Bearer secret',
+      'X-GitHub-Api-Version': '2026-03-10',
+    })
     const signed = githubHeaders('https://objects.githubusercontent.com/report.ndjson?token=signed', 'secret')
-    expect(signed.Authorization).toBeUndefined()
+    expect(signed).toEqual({})
+  })
+
+  it('separates API network failures from CDN download failures', () => {
+    const blocked = new TypeError('Failed to fetch')
+    expect(describeApiFailure(blocked)).toMatch(/GitHub API/)
+    expect(describeApiFailure(blocked)).not.toMatch(/authenticated calls/i)
+    const link = 'https://objects.githubusercontent.com/report.ndjson?token=signed'
+    expect(describeDownloadFailure(blocked, link)).toMatch(/file host/)
+    expect(describeDownloadFailure(blocked, link)).toContain(link)
+    expect(describeDownloadFailure(blocked, link)).not.toMatch(/authenticated calls/i)
   })
 
   it('reads download_links from a 28-day response', () => {

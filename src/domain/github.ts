@@ -25,12 +25,17 @@ export function dayReportUrl(mode: ScopeMode, slug: string, day: string): string
   return `${GITHUB_API}/orgs/${encodeURIComponent(slug)}/copilot/metrics/reports/organization-1-day?${query}`
 }
 
+export function isGitHubApi(url: string): boolean {
+  return new URL(url).host === 'api.github.com'
+}
+
 export function githubHeaders(url: string, token: string): Record<string, string> {
-  const headers: Record<string, string> = { Accept: 'application/vnd.github+json' }
-  if (new URL(url).host !== 'api.github.com') return headers
-  headers.Authorization = `Bearer ${token}`
-  headers['X-GitHub-Api-Version'] = GITHUB_API_VERSION
-  return headers
+  if (!isGitHubApi(url)) return {}
+  return {
+    Accept: 'application/vnd.github+json',
+    Authorization: `Bearer ${token}`,
+    'X-GitHub-Api-Version': GITHUB_API_VERSION,
+  }
 }
 
 export function parseLinkResponse(body: unknown): ReportLinks | { error: string } {
@@ -47,10 +52,18 @@ export function parseLinkResponse(body: unknown): ReportLinks | { error: string 
   }
 }
 
-export function describeFetchFailure(error: unknown): string {
+export function describeApiFailure(error: unknown): string {
   if (error instanceof TypeError) {
-    return 'The browser blocked the GitHub request. Authenticated calls from a page often fail CORS. Download the NDJSON report and drop it here, or run the collector in a fork.'
+    return 'The browser blocked the GitHub API request. Download the NDJSON report and drop it here, or run the collector in a fork.'
   }
   if (error instanceof Error && error.message) return error.message
-  return 'The report request failed.'
+  return 'The GitHub API request failed.'
+}
+
+export function describeDownloadFailure(error: unknown, link: string): string {
+  if (error instanceof TypeError) {
+    return `The browser blocked the report file download. The GitHub API call succeeded, but the file host rejected the page request. Download this file and drop it here: ${link}`
+  }
+  if (error instanceof Error && error.message) return error.message
+  return `The report file download failed. Download this file and drop it here: ${link}`
 }

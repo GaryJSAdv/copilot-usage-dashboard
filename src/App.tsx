@@ -20,7 +20,7 @@ import { clearSession, loadSession, saveSession } from './storage'
 import { Chart } from './ui/Chart'
 import { ConnectionPanel, UploadPanel } from './ui/Panels'
 
-type Origin = 'sample' | 'published' | 'upload' | 'live'
+type Origin = 'published' | 'upload' | 'live'
 
 type Dataset = {
   origin: Origin
@@ -63,11 +63,7 @@ export function App() {
     async function boot() {
       const published = await loadPublished()
       if (cancelled) return
-      if (published) {
-        setDataset(published)
-      } else {
-        setDataset(await loadSample())
-      }
+      if (published) setDataset(published)
       setBooting(false)
     }
     void boot()
@@ -119,7 +115,10 @@ export function App() {
     setToken('')
     setSlug('')
     setMessage(null)
-    void loadSample().then(setDataset)
+    setDataset(null)
+    void loadPublished().then((published) => {
+      if (published) setDataset(published)
+    })
   }
 
   async function loadFiles(files: File[]) {
@@ -157,10 +156,7 @@ export function App() {
           when the report includes them.
         </p>
       </header>
-      {dataset?.origin === 'sample' && (
-        <p className="banner">Sample data. These numbers are synthetic and are not an enterprise.</p>
-      )}
-      {dataset && dataset.origin !== 'sample' && <p className="banner quiet">{dataset.label}</p>}
+      {dataset && <p className="banner quiet">{dataset.label}</p>}
       <div className="grid">
         <ConnectionPanel
           mode={mode}
@@ -176,11 +172,16 @@ export function App() {
         />
         <UploadPanel onFiles={(files) => void loadFiles(files)} onPaste={(text) => applyText(text, 'Pasted report')} />
       </div>
-      {booting && <p className="muted">Loading the report…</p>}
-      {!booting && days.length === 0 && (
+      {!booting && !dataset && (
+        <section className="panel">
+          <h2>No report loaded</h2>
+          <p>Connect with a token, or upload an NDJSON report. Charts stay empty until then.</p>
+        </section>
+      )}
+      {dataset && days.length === 0 && (
         <section className="panel">
           <h2>No daily rows</h2>
-          <p>Connect with a token, or upload an enterprise or organization usage report.</p>
+          <p>The report loaded, and it has no daily usage rows.</p>
         </section>
       )}
       {days.length > 0 && (
@@ -400,23 +401,3 @@ async function loadPublished(): Promise<Dataset | null> {
   }
 }
 
-async function loadSample(): Promise<Dataset> {
-  const response = await fetch(`${import.meta.env.BASE_URL}fixtures/sample-usage.ndjson`)
-  if (!response.ok) {
-    return {
-      origin: 'sample',
-      label: 'Sample',
-      points: [],
-      unknownKeys: [],
-      warnings: ['The sample report is missing from this build.'],
-    }
-  }
-  const parsed = parseReport(await response.text())
-  return {
-    origin: 'sample',
-    label: 'Sample',
-    points: parsed.points,
-    unknownKeys: parsed.unknownKeys,
-    warnings: warningsFrom(parsed),
-  }
-}

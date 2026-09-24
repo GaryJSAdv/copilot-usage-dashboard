@@ -1,4 +1,4 @@
-import { describeFetchFailure, githubHeaders, latestReportUrl, parseLinkResponse, type ReportLinks } from '../domain/github'
+import { describeApiFailure, describeDownloadFailure, githubHeaders, latestReportUrl, parseLinkResponse, type ReportLinks } from '../domain/github'
 import type { ScopeMode } from '../domain/slug'
 
 export type LiveReport = ReportLinks & {
@@ -10,7 +10,7 @@ export async function fetchLatestReport(mode: ScopeMode, slug: string, token: st
   try {
     response = await fetch(latestReportUrl(mode, slug), { headers: githubHeaders(latestReportUrl(mode, slug), token) })
   } catch (error) {
-    throw new Error(describeFetchFailure(error))
+    throw new Error(describeApiFailure(error))
   }
   if (!response.ok) {
     throw new Error(await githubError(response, mode))
@@ -19,20 +19,20 @@ export async function fetchLatestReport(mode: ScopeMode, slug: string, token: st
   if ('error' in links) throw new Error(links.error)
   const texts: string[] = []
   for (const link of links.downloadLinks) {
-    texts.push(await downloadReport(link, token))
+    texts.push(await downloadReport(link))
   }
   return { ...links, texts }
 }
 
-async function downloadReport(link: string, token: string): Promise<string> {
+async function downloadReport(link: string): Promise<string> {
   let response: Response
   try {
-    response = await fetch(link, { headers: githubHeaders(link, token) })
+    response = await fetch(link)
   } catch (error) {
-    throw new Error(describeFetchFailure(error))
+    throw new Error(describeDownloadFailure(error, link))
   }
   if (!response.ok) {
-    throw new Error(`Report download failed (${response.status}). Open the signed link from GitHub and upload the file.`)
+    throw new Error(`Report download failed (${response.status}). Download this file and drop it here: ${link}`)
   }
   return response.text()
 }
