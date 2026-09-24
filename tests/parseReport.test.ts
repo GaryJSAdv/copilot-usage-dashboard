@@ -2,8 +2,10 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { mergePoints, parseReport } from '../src/domain/parseReport'
+import { filterPoints } from '../src/domain/timeframe'
 
 const sample = readFileSync(resolve('public/fixtures/sample-usage.ndjson'), 'utf8')
+const enterprise = readFileSync(resolve('tests/fixtures/enterprise-28-day.ndjson'), 'utf8')
 
 describe('parseReport', () => {
   it('reads the sample NDJSON into a rising acceptance series', () => {
@@ -112,6 +114,37 @@ describe('parseReport', () => {
     ])
     expect(result.points).toHaveLength(1)
     expect(result.points[0]?.activity.code_acceptance_activity_count).toBe(7)
+  })
+
+  it('reads a wrapped enterprise 28-day report from day_totals', () => {
+    const result = parseReport(enterprise)
+    expect(result.errors).toEqual([])
+    expect(result.skipped).toEqual([])
+    expect(result.unknownKeys).toEqual([])
+    expect(result.reportStartDay).toBe('2026-08-27')
+    expect(result.reportEndDay).toBe('2026-09-23')
+    expect(result.points).toHaveLength(28)
+    expect(result.points[0]?.day).toBe('2026-08-27')
+    expect(result.points[27]?.day).toBe('2026-09-23')
+    expect(result.points.map((point) => point.day)).toEqual([...result.points.map((point) => point.day)].sort())
+    const locAdded = result.points.reduce((sum, point) => sum + (point.activity.loc_added_sum ?? 0), 0)
+    const locDeleted = result.points.reduce((sum, point) => sum + (point.activity.loc_deleted_sum ?? 0), 0)
+    const locSuggested = result.points.reduce((sum, point) => sum + (point.activity.loc_suggested_to_add_sum ?? 0), 0)
+    const locSuggestedDelete = result.points.reduce((sum, point) => sum + (point.activity.loc_suggested_to_delete_sum ?? 0), 0)
+    const acceptances = result.points.reduce((sum, point) => sum + (point.activity.code_acceptance_activity_count ?? 0), 0)
+    expect(locAdded).toBe(45369)
+    expect(locDeleted).toBe(31101)
+    expect(locSuggested).toBe(18377)
+    expect(locSuggestedDelete).toBe(7)
+    expect(acceptances).toBe(156)
+    expect(result.points[0]?.activeUsers.daily_active_users).toEqual(expect.any(Number))
+    const september = filterPoints(result.points, { from: '2026-09-01', to: '2026-09-30' })
+    const august = filterPoints(result.points, { from: '2026-08-01', to: '2026-08-31' })
+    expect(september[0]?.day).toBe('2026-09-01')
+    expect(september.at(-1)?.day).toBe('2026-09-23')
+    expect(september).toHaveLength(23)
+    expect(august.map((point) => point.day)).toEqual(['2026-08-27', '2026-08-28', '2026-08-29', '2026-08-30', '2026-08-31'])
+    expect(JSON.stringify(result.points)).not.toContain('enterprise_id')
   })
 
   it('replaces a day when merging a newer snapshot and keeps older days', () => {

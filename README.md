@@ -36,7 +36,7 @@ Drop the file on **Upload a report**, or paste the file text and click **Load pa
 Accepted shapes:
 
 - NDJSON lines for an aggregated 1-day report, or for a users report
-- One JSON object for an aggregated 28-day report, with `day_totals`
+- One JSON object or NDJSON line for an aggregated 28-day report, with `report_start_day`, `report_end_day`, and `day_totals`
 - A JSON array of those records
 
 Per-user rows are summed by `day`. Active user counts are read only from aggregated rows (`daily_active_users`, `weekly_active_users`, `monthly_active_users`). Token totals are read only from `totals_by_cli.token_usage` and `totals_by_copilot_app.token_usage`. Other keys are ignored and listed under the charts.
