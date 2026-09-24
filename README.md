@@ -1,12 +1,8 @@
 # Copilot usage dashboard
 
-A static dashboard for GitHub Copilot usage metrics. It shows whether acceptances, lines of code, and active users are rising. Open the sample on GitHub Pages, or point it at your own enterprise.
+A static dashboard for GitHub Copilot usage metrics. It shows whether acceptances, lines of code, and active users are rising. The page starts empty. Connect with a token, or upload a report.
 
 The page reads the fields documented in [Copilot usage metrics](https://docs.github.com/en/copilot/reference/copilot-usage-metrics/copilot-usage-metrics) and the [REST report endpoints](https://docs.github.com/en/rest/copilot/copilot-usage-metrics). It does not show spend, credits, seats, or invoices.
-
-## Use the sample
-
-Open the GitHub Pages site. The charts load `public/fixtures/sample-usage.ndjson`. The banner says the numbers are synthetic.
 
 ## Load your own report in the browser
 
@@ -19,9 +15,9 @@ Open the GitHub Pages site. The charts load `public/fixtures/sample-usage.ndjson
 3. Paste a slug, or a URL such as `https://github.com/enterprises/your-slug`.
 4. Paste the token and click **Connect**.
 
-The token is stored in `sessionStorage` for this tab. **Clear** removes it. The page calls `api.github.com` from the browser. It requests the latest 28-day report (`enterprise-28-day/latest` or `organization-28-day/latest`) and then downloads `download_links`. The `Authorization` header is sent only to `api.github.com`.
+The token is stored in `sessionStorage` for this tab. **Clear** removes it. The page calls `api.github.com` from the browser. It requests the latest 28-day report (`enterprise-28-day/latest` or `organization-28-day/latest`) and then downloads each `download_links` URL with a bare fetch. `Authorization`, `Accept`, and `X-GitHub-Api-Version` are sent only to `api.github.com`. A custom `Accept` on the signed file URL forces a CORS preflight that the file host rejects.
 
-GitHub often blocks that call from a browser (CORS). When that happens, the page tells you. Use the upload path below. Nothing on this site receives the token.
+If the API call or the file download is blocked, the page says which step failed. Download the NDJSON and use the upload path below. Nothing on this site receives the token. Charts stay empty until a live report or an uploaded file loads. A fork that publishes `public/data/series.json` still shows that snapshot.
 
 ## Upload a report
 

@@ -35,7 +35,7 @@ if ('error' in links) {
 
 const texts: string[] = []
 for (const link of links.downloadLinks) {
-  const download = await fetch(link, { headers: githubHeaders(link, token) })
+  const download = await fetch(link)
   if (!download.ok) {
     console.error(`Download failed ${download.status} for ${link}`)
     process.exit(1)
