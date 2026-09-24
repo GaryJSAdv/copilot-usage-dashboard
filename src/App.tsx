@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
-import { fetchLatestReport } from './api/fetchReport'
+import { useEffect, useState } from 'react'
+import { fetchScopedReport } from './api/fetchReport'
 import {
   ACTIVE_USER_LABELS,
   ACTIVE_USER_METRICS,
@@ -16,9 +16,11 @@ import {
 } from './domain/metrics'
 import { parseReport } from './domain/parseReport'
 import { parseSlug, type ScopeMode } from './domain/slug'
+import { filterPoints, resolveTimeframe, type TimeframePreset } from './domain/timeframe'
 import { clearSession, loadSession, saveSession } from './storage'
 import { Chart } from './ui/Chart'
 import { ConnectionPanel, UploadPanel } from './ui/Panels'
+import { TimeframeControl } from './ui/Timeframe'
 
 type Origin = 'published' | 'upload' | 'live'
 
@@ -30,10 +32,10 @@ type Dataset = {
   warnings: string[]
 }
 
-const ACTIVITY_COLORS = ['#0f6e56', '#1d4e89', '#8a4b08']
-const LOC_COLORS = ['#0f6e56', '#1d4e89', '#8a4b08', '#6b3fa0']
-const USER_COLORS = ['#0f6e56', '#1d4e89', '#8a4b08']
-const TOKEN_COLORS = ['#0f6e56', '#1d4e89', '#8a4b08', '#6b3fa0']
+const ACTIVITY_COLORS = ['#1a7f37', '#0969da', '#bf8700']
+const LOC_COLORS = ['#1a7f37', '#0969da', '#cf222e', '#8250df']
+const USER_COLORS = ['#1a7f37', '#0969da', '#bf8700']
+const TOKEN_COLORS = ['#1a7f37', '#0969da', '#bf8700', '#8250df']
 
 const LOC_METRICS = [
   'loc_added_sum',
@@ -57,6 +59,9 @@ export function App() {
   const [message, setMessage] = useState<string | null>(null)
   const [dataset, setDataset] = useState<Dataset | null>(null)
   const [booting, setBooting] = useState(true)
+  const [preset, setPreset] = useState<TimeframePreset>('all')
+  const [from, setFrom] = useState('')
+  const [to, setTo] = useState('')
 
   useEffect(() => {
     let cancelled = false
@@ -85,7 +90,12 @@ export function App() {
     setBusy(true)
     setMessage(null)
     try {
-      const report = await fetchLatestReport(mode, parsed.slug, token.trim())
+      const range = resolveTimeframe(preset, from, to, new Date())
+      if (range && 'error' in range) {
+        setMessage(range.error)
+        return
+      }
+      const report = await fetchScopedReport(mode, parsed.slug, token.trim(), range)
       saveSession({ mode, slug: parsed.slug, token: token.trim() })
       setSlug(parsed.slug)
       const parsedReport = parseReport(report.texts.join('\n'))
@@ -98,9 +108,11 @@ export function App() {
         label: `${mode === 'enterprise' ? 'Enterprise' : 'Organization'} ${parsed.slug}, ${window}`,
         points: parsedReport.points,
         unknownKeys: parsedReport.unknownKeys,
-        warnings: warningsFrom(parsedReport),
+        warnings: [...warningsFrom(parsedReport), ...report.downloadWarnings],
       })
-      if (parsedReport.points.length === 0) {
+      if (report.downloadWarnings.length > 0) {
+        setMessage(report.downloadWarnings.join('\n\n'))
+      } else if (parsedReport.points.length === 0) {
         setMessage('The report downloaded, and it has no daily usage rows.')
       }
     } catch (error) {
@@ -144,7 +156,11 @@ export function App() {
   }
 
   const days = dataset?.points ?? []
-  const summary = useMemo(() => summarize(days), [days])
+  const rangeResult = resolveTimeframe(preset, from, to, new Date())
+  const rangeError = rangeResult && 'error' in rangeResult ? rangeResult.error : null
+  const activeRange = rangeResult && !('error' in rangeResult) ? rangeResult : null
+  const visible = filterPoints(days, activeRange)
+  const summary = summarize(visible)
 
   return (
     <main>
@@ -157,6 +173,16 @@ export function App() {
         </p>
       </header>
       {dataset && <p className="banner quiet">{dataset.label}</p>}
+      <TimeframeControl
+        preset={preset}
+        from={from}
+        to={to}
+        active={activeRange}
+        onPreset={setPreset}
+        onFrom={setFrom}
+        onTo={setTo}
+      />
+      {rangeError && <p className="error">{rangeError}</p>}
       <div className="grid">
         <ConnectionPanel
           mode={mode}
@@ -184,38 +210,45 @@ export function App() {
           <p>The report loaded, and it has no daily usage rows.</p>
         </section>
       )}
-      {days.length > 0 && (
+      {dataset && days.length > 0 && visible.length === 0 && (
+        <section className="panel">
+          <h2>No rows in this timeframe</h2>
+          <p>
+            Nothing in the loaded report falls between {activeRange?.from} and {activeRange?.to} UTC. Choose All loaded,
+            or upload NDJSON that covers those days.
+          </p>
+        </section>
+      )}
+      {visible.length > 0 && (
         <>
           <section className="stats">
             {summary.map((item) => (
               <article key={item.id} className="stat">
                 <h2>{item.label}</h2>
                 <p className="stat-value">{formatNumber(item.latest)}</p>
-                <p className="muted">
-                  {item.day} · {item.delta} since {item.firstDay}
-                </p>
+                <p className="muted">{item.detail}</p>
               </article>
             ))}
           </section>
           <Chart
             title="Acceptances"
             note="code_acceptance_activity_count, plus generation and interaction counts when the report has them"
-            series={seriesFor(days, ENGAGEMENT_METRICS, ACTIVITY_LABELS, ACTIVITY_COLORS)}
+            series={seriesFor(visible, ENGAGEMENT_METRICS, ACTIVITY_LABELS, ACTIVITY_COLORS)}
           />
           <Chart
-            title="Lines of code"
-            note="loc_added_sum, loc_suggested_to_add_sum, and loc_deleted_sum when present"
-            series={seriesFor(days, LOC_METRICS, ACTIVITY_LABELS, LOC_COLORS)}
+            title="Lines of code added"
+            note="loc_added_sum and loc_suggested_to_add_sum, plus loc_deleted_sum and loc_suggested_to_delete_sum when the report includes them"
+            series={seriesFor(visible, LOC_METRICS, ACTIVITY_LABELS, LOC_COLORS)}
           />
           <Chart
             title="Active users"
             note="daily_active_users, weekly_active_users, and monthly_active_users on aggregated reports"
-            series={seriesFor(days, ACTIVE_USER_METRICS, ACTIVE_USER_LABELS, USER_COLORS)}
+            series={seriesFor(visible, ACTIVE_USER_METRICS, ACTIVE_USER_LABELS, USER_COLORS)}
           />
           <Chart
             title="Tokens"
             note="prompt and output sums under totals_by_cli.token_usage and totals_by_copilot_app.token_usage"
-            series={seriesFor(days, TOKEN_PATHS, TOKEN_LABELS, TOKEN_COLORS)}
+            series={seriesFor(visible, TOKEN_PATHS, TOKEN_LABELS, TOKEN_COLORS)}
           />
           {dataset?.unknownKeys.length ? (
             <p className="muted">Ignored unrecognized fields: {dataset.unknownKeys.join(', ')}.</p>
@@ -225,7 +258,7 @@ export function App() {
               {warning}
             </p>
           ))}
-          <DayTable points={days} />
+          <DayTable points={visible} />
         </>
       )}
     </main>
@@ -302,27 +335,34 @@ function summarize(points: DailyPoint[]) {
   const first = points[0]
   const last = points[points.length - 1]
   if (!first || !last) return []
-  const cards: { id: string; label: string; latest: number; day: string; firstDay: string; delta: string }[] = []
+  const cards: { id: string; label: string; latest: number; detail: string }[] = []
+  const acceptanceSum = sumOf(points, (point) => point.activity.code_acceptance_activity_count)
   const acceptance = pair(first.activity.code_acceptance_activity_count, last.activity.code_acceptance_activity_count)
-  if (acceptance) {
+  if (acceptanceSum !== null && acceptance) {
     cards.push({
       id: 'acceptances',
-      label: 'Acceptances on the latest day',
-      latest: acceptance.last,
-      day: last.day,
-      firstDay: first.day,
-      delta: delta(acceptance.first, acceptance.last),
+      label: 'Acceptances in range',
+      latest: acceptanceSum,
+      detail: `${formatNumber(acceptance.last)} on ${last.day} · ${delta(acceptance.first, acceptance.last)} since ${first.day}`,
     })
   }
+  const addedSum = sumOf(points, (point) => point.activity.loc_added_sum)
   const added = pair(first.activity.loc_added_sum, last.activity.loc_added_sum)
-  if (added) {
+  if (addedSum !== null && added) {
     cards.push({
       id: 'loc',
-      label: 'Lines added on the latest day',
-      latest: added.last,
-      day: last.day,
-      firstDay: first.day,
-      delta: delta(added.first, added.last),
+      label: 'Lines added',
+      latest: addedSum,
+      detail: `${formatNumber(added.last)} loc_added_sum on ${last.day} · ${delta(added.first, added.last)} since ${first.day}`,
+    })
+  }
+  const suggestedSum = sumOf(points, (point) => point.activity.loc_suggested_to_add_sum)
+  if (suggestedSum !== null) {
+    cards.push({
+      id: 'loc-suggested',
+      label: 'Lines suggested to add',
+      latest: suggestedSum,
+      detail: `loc_suggested_to_add_sum from ${first.day} to ${last.day}`,
     })
   }
   const users = pair(first.activeUsers.daily_active_users, last.activeUsers.daily_active_users)
@@ -331,12 +371,22 @@ function summarize(points: DailyPoint[]) {
       id: 'dau',
       label: 'Daily active users',
       latest: users.last,
-      day: last.day,
-      firstDay: first.day,
-      delta: delta(users.first, users.last),
+      detail: `${last.day} · ${delta(users.first, users.last)} since ${first.day}`,
     })
   }
   return cards
+}
+
+function sumOf(points: DailyPoint[], read: (point: DailyPoint) => number | undefined): number | null {
+  let total = 0
+  let seen = false
+  for (const point of points) {
+    const value = read(point)
+    if (value === undefined) continue
+    seen = true
+    total += value
+  }
+  return seen ? total : null
 }
 
 function pair(first: number | undefined, last: number | undefined): { first: number; last: number } | null {

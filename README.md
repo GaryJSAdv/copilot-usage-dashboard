@@ -4,6 +4,14 @@ A static dashboard for GitHub Copilot usage metrics. It shows whether acceptance
 
 The page reads the fields documented in [Copilot usage metrics](https://docs.github.com/en/copilot/reference/copilot-usage-metrics/copilot-usage-metrics) and the [REST report endpoints](https://docs.github.com/en/rest/copilot/copilot-usage-metrics). It does not show spend, credits, seats, or invoices.
 
+## Timeframe
+
+Charts, summary cards, and the daily table follow the timeframe control. Dates are UTC calendar days, the same `YYYY-MM-DD` values as the report `day` field. Presets are this month and last month. Custom uses an inclusive from/to range. All loaded shows every day in the file.
+
+The REST API has no start or end parameter. A one-day selection calls `enterprise-1-day` or `organization-1-day` with the documented `day` query. Any other live connect calls `enterprise-28-day/latest` or `organization-28-day/latest`, then filters the rows. If that file is missing days inside a range of 31 or fewer, the page requests each missing day with `day`. A longer gap is left for an uploaded NDJSON file. Signed download URLs that the browser cannot fetch are shown so you can drop the files yourself.
+
+Lines added use `loc_added_sum`. Lines suggested to add use `loc_suggested_to_add_sum`. Both are summed across the visible days. The Actions collector in a fork is a separate model: it writes `public/data/series.json`. This page does not run that collector.
+
 ## Load your own report in the browser
 
 1. Create a classic personal access token.
@@ -28,7 +36,7 @@ Drop the file on **Upload a report**, or paste the file text and click **Load pa
 Accepted shapes:
 
 - NDJSON lines for an aggregated 1-day report, or for a users report
-- One JSON object for an aggregated 28-day report, with `day_totals`
+- One JSON object or NDJSON line for an aggregated 28-day report, with `report_start_day`, `report_end_day`, and `day_totals`
 - A JSON array of those records
 
 Per-user rows are summed by `day`. Active user counts are read only from aggregated rows (`daily_active_users`, `weekly_active_users`, `monthly_active_users`). Token totals are read only from `totals_by_cli.token_usage` and `totals_by_copilot_app.token_usage`. Other keys are ignored and listed under the charts.
